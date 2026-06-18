@@ -33,8 +33,8 @@ class PlaceAdapter(private val onItemClicked: (Place) -> Unit) :
 
         fun bind(place: Place) {
             binding.tvName.text = place.name
-            binding.tvAddress.text = place.address.ifBlank { "Morada: " }
-            binding.tvLocality.text = place.locality.ifBlank { "Localidade: " }
+            binding.tvAddress.text = "Morada: ${place.address}"
+            binding.tvLocality.text = "Localidade: ${place.locality}"
             binding.tvLocation.text = "Lat: ${place.latitude ?: 0.0}, Lon: ${place.longitude ?: 0.0}"
             binding.tvDescription.text = "Descrição: ${place.description}"
         }

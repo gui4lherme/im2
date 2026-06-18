@@ -9,6 +9,8 @@ import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -128,6 +130,7 @@ class MainActivity : AppCompatActivity() {
         
         val dialog = builder.create()
         dialog.setOnShowListener {
+            prepareFormDialogForKeyboard(dialog, dialogBinding)
             val button = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
             button.setOnClickListener {
                 val name = dialogBinding.etName.text.toString().trim()
@@ -194,6 +197,7 @@ class MainActivity : AppCompatActivity() {
             .create()
 
         dialog.setOnShowListener {
+            prepareFormDialogForKeyboard(dialog, dialogBinding)
             val button = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
             button.setOnClickListener {
                 val name = dialogBinding.etName.text.toString().trim()
@@ -217,6 +221,17 @@ class MainActivity : AppCompatActivity() {
             }
         }
         dialog.show()
+    }
+
+    private fun prepareFormDialogForKeyboard(dialog: AlertDialog, dialogBinding: DialogAddPlaceBinding) {
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        val maxFormHeight = (resources.displayMetrics.heightPixels * 0.55).toInt()
+        val layoutParams = dialogBinding.root.layoutParams
+            ?: ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, maxFormHeight)
+        dialogBinding.root.layoutParams = layoutParams.apply {
+            width = ViewGroup.LayoutParams.MATCH_PARENT
+            height = maxFormHeight
+        }
     }
 
     private fun setupUseCurrentLocationButton(dialogBinding: DialogAddPlaceBinding) {
