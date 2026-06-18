@@ -119,6 +119,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun showAddPlaceDialog() {
         val dialogBinding = DialogAddPlaceBinding.inflate(layoutInflater)
+        getCurrentLocation { location ->
+            location ?: return@getCurrentLocation
+            dialogBinding.etLatitude.setText(location.latitude.toString())
+            dialogBinding.etLongitude.setText(location.longitude.toString())
+        }
+
         val builder = AlertDialog.Builder(this)
             .setTitle(R.string.add_place)
             .setView(dialogBinding.root)
@@ -132,21 +138,20 @@ class MainActivity : AppCompatActivity() {
                 val name = dialogBinding.etName.text.toString().trim()
                 val description = dialogBinding.etDescription.text.toString().trim()
 
-
-                if (name.isNotEmpty()) {
-                    getCurrentLocation { location ->
-                        val place = Place(
-                            name = name,
-                            description = description,
-                            latitude = location?.latitude ?: 0.0,
-                            longitude = location?.longitude ?: 0.0
-                        )
-                        viewModel.insert(place)
-                        dialog.dismiss()
-                    }
-                } else {
+                if (name.isEmpty()) {
                     dialogBinding.etName.error = getString(R.string.name_required)
+                    return@setOnClickListener
                 }
+
+                val coordinates = getValidatedCoordinates(dialogBinding) ?: return@setOnClickListener
+                val place = Place(
+                    name = name,
+                    description = description,
+                    latitude = coordinates.first,
+                    longitude = coordinates.second
+                )
+                viewModel.insert(place)
+                dialog.dismiss()
             }
         }
         dialog.show()
@@ -176,19 +181,61 @@ class MainActivity : AppCompatActivity() {
         val dialogBinding = DialogAddPlaceBinding.inflate(layoutInflater)
         dialogBinding.etName.setText(place.name)
         dialogBinding.etDescription.setText(place.description)
+        dialogBinding.etLatitude.setText(place.latitude.toString())
+        dialogBinding.etLongitude.setText(place.longitude.toString())
 
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.edit_place)
             .setView(dialogBinding.root)
-            .setPositiveButton(R.string.update) { _, _ ->
+            .setPositiveButton(R.string.update, null)
+            .setNegativeButton(R.string.cancel, null)
+            .create()
+
+        dialog.setOnShowListener {
+            val button = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            button.setOnClickListener {
+                val name = dialogBinding.etName.text.toString().trim()
+
+                if (name.isEmpty()) {
+                    dialogBinding.etName.error = getString(R.string.name_required)
+                    return@setOnClickListener
+                }
+
+                val coordinates = getValidatedCoordinates(dialogBinding) ?: return@setOnClickListener
                 val updatedPlace = place.copy(
-                    name = dialogBinding.etName.text.toString().trim(),
-                    description = dialogBinding.etDescription.text.toString().trim()
+                    name = name,
+                    description = dialogBinding.etDescription.text.toString().trim(),
+                    latitude = coordinates.first,
+                    longitude = coordinates.second
                 )
                 viewModel.update(updatedPlace)
+                dialog.dismiss()
             }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        }
+        dialog.show()
+    }
+
+    private fun getValidatedCoordinates(dialogBinding: DialogAddPlaceBinding): Pair<Double, Double>? {
+        dialogBinding.tilLatitude.error = null
+        dialogBinding.tilLongitude.error = null
+
+        val latitude = dialogBinding.etLatitude.text.toString().trim().toDoubleOrNull()
+        val longitude = dialogBinding.etLongitude.text.toString().trim().toDoubleOrNull()
+
+        var isValid = true
+        if (latitude == null || latitude !in -90.0..90.0) {
+            dialogBinding.tilLatitude.error = getString(R.string.invalid_latitude)
+            isValid = false
+        }
+        if (longitude == null || longitude !in -180.0..180.0) {
+            dialogBinding.tilLongitude.error = getString(R.string.invalid_longitude)
+            isValid = false
+        }
+
+        if (!isValid || latitude == null || longitude == null) {
+            return null
+        }
+        return latitude to longitude
     }
 
     private fun sharePlace(place: Place) {

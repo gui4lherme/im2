@@ -7,6 +7,8 @@
     <string name="cancel">Cancelar</string>
     <string name="update">Atualizar</string>
     <string name="name_required">O nome é obrigatório</string>
+    <string name="invalid_latitude">Introduza uma latitude válida entre -90 e 90</string>
+    <string name="invalid_longitude">Introduza uma longitude válida entre -180 e 180</string>
     <string name="confirm_delete">Tem a certeza que deseja eliminar este local?</string>
     <string name="clear_all">Limpar Tudo</string>
     <string name="no_places">Nenhum local guardado ainda.</string>
