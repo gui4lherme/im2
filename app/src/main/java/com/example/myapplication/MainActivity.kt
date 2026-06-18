@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.myapplication.adapter.PlaceAdapter
 import com.example.myapplication.data.Place
@@ -87,8 +88,6 @@ class MainActivity : AppCompatActivity() {
         binding.fabAdd.setOnClickListener {
             showAddPlaceDialog()
         }
-
-        checkPermissions()
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -119,11 +118,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showAddPlaceDialog() {
         val dialogBinding = DialogAddPlaceBinding.inflate(layoutInflater)
-        getCurrentLocation { location ->
-            location ?: return@getCurrentLocation
-            dialogBinding.etLatitude.setText(location.latitude.toString())
-            dialogBinding.etLongitude.setText(location.longitude.toString())
-        }
+        setupUseCurrentLocationButton(dialogBinding)
 
         val builder = AlertDialog.Builder(this)
             .setTitle(R.string.add_place)
@@ -137,16 +132,20 @@ class MainActivity : AppCompatActivity() {
             button.setOnClickListener {
                 val name = dialogBinding.etName.text.toString().trim()
                 val description = dialogBinding.etDescription.text.toString().trim()
+                val address = dialogBinding.etAddress.text.toString().trim()
+                val locality = dialogBinding.etLocality.text.toString().trim()
 
                 if (name.isEmpty()) {
                     dialogBinding.etName.error = getString(R.string.name_required)
                     return@setOnClickListener
                 }
 
-                val coordinates = getValidatedCoordinates(dialogBinding) ?: return@setOnClickListener
+                val coordinates = getOptionalCoordinates(dialogBinding) ?: return@setOnClickListener
                 val place = Place(
                     name = name,
                     description = description,
+                    address = address,
+                    locality = locality,
                     latitude = coordinates.first,
                     longitude = coordinates.second
                 )
@@ -159,7 +158,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showEditDeleteDialog(place: Place) {
         val options = arrayOf(
-            getString(R.string.update), 
+            getString(R.string.edit),
             getString(R.string.delete_place),
             getString(R.string.share),
             getString(R.string.view_on_map)
@@ -181,8 +180,11 @@ class MainActivity : AppCompatActivity() {
         val dialogBinding = DialogAddPlaceBinding.inflate(layoutInflater)
         dialogBinding.etName.setText(place.name)
         dialogBinding.etDescription.setText(place.description)
-        dialogBinding.etLatitude.setText(place.latitude.toString())
-        dialogBinding.etLongitude.setText(place.longitude.toString())
+        dialogBinding.etAddress.setText(place.address)
+        dialogBinding.etLocality.setText(place.locality)
+        dialogBinding.etLatitude.setText(place.latitude?.toString().orEmpty())
+        dialogBinding.etLongitude.setText(place.longitude?.toString().orEmpty())
+        setupUseCurrentLocationButton(dialogBinding)
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.edit_place)
@@ -201,10 +203,12 @@ class MainActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
 
-                val coordinates = getValidatedCoordinates(dialogBinding) ?: return@setOnClickListener
+                val coordinates = getOptionalCoordinates(dialogBinding) ?: return@setOnClickListener
                 val updatedPlace = place.copy(
                     name = name,
                     description = dialogBinding.etDescription.text.toString().trim(),
+                    address = dialogBinding.etAddress.text.toString().trim(),
+                    locality = dialogBinding.etLocality.text.toString().trim(),
                     latitude = coordinates.first,
                     longitude = coordinates.second
                 )
@@ -215,12 +219,48 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun getValidatedCoordinates(dialogBinding: DialogAddPlaceBinding): Pair<Double, Double>? {
+    private fun setupUseCurrentLocationButton(dialogBinding: DialogAddPlaceBinding) {
+        fun updateButtonState() {
+            dialogBinding.btnUseCurrentLocation.isEnabled =
+                dialogBinding.etName.text.toString().trim().isNotEmpty()
+        }
+
+        updateButtonState()
+        dialogBinding.etName.doAfterTextChanged {
+            updateButtonState()
+        }
+
+        dialogBinding.btnUseCurrentLocation.setOnClickListener {
+            if (!hasLocationPermission()) {
+                requestLocationPermissions()
+                return@setOnClickListener
+            }
+
+            getCurrentLocation { location ->
+                if (location == null) {
+                    Toast.makeText(this, R.string.location_unavailable, Toast.LENGTH_SHORT).show()
+                    return@getCurrentLocation
+                }
+
+                dialogBinding.etLatitude.setText(location.latitude.toString())
+                dialogBinding.etLongitude.setText(location.longitude.toString())
+            }
+        }
+    }
+
+    private fun getOptionalCoordinates(dialogBinding: DialogAddPlaceBinding): Pair<Double?, Double?>? {
         dialogBinding.tilLatitude.error = null
         dialogBinding.tilLongitude.error = null
 
-        val latitude = dialogBinding.etLatitude.text.toString().trim().toDoubleOrNull()
-        val longitude = dialogBinding.etLongitude.text.toString().trim().toDoubleOrNull()
+        val latitudeText = dialogBinding.etLatitude.text.toString().trim()
+        val longitudeText = dialogBinding.etLongitude.text.toString().trim()
+
+        if (latitudeText.isEmpty() && longitudeText.isEmpty()) {
+            return null to null
+        }
+
+        val latitude = latitudeText.toDoubleOrNull()
+        val longitude = longitudeText.toDoubleOrNull()
 
         var isValid = true
         if (latitude == null || latitude !in -90.0..90.0) {
@@ -242,14 +282,22 @@ class MainActivity : AppCompatActivity() {
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_SUBJECT, place.name)
-            val text = getString(R.string.share_text, place.name, place.description, place.latitude, place.longitude)
+            val text = if (place.latitude != null && place.longitude != null) {
+                getString(R.string.share_text_with_coordinates, place.name, place.description, place.latitude, place.longitude)
+            } else {
+                getString(R.string.share_text_without_coordinates, place.name, place.description, Uri.encode(getMapSearchQuery(place)))
+            }
             putExtra(Intent.EXTRA_TEXT, text)
         }
         startActivity(Intent.createChooser(shareIntent, getString(R.string.share)))
     }
 
     private fun openMap(place: Place) {
-        val gmmIntentUri = Uri.parse("geo:${place.latitude},${place.longitude}?q=${Uri.encode(place.name)}")
+        val gmmIntentUri = if (place.latitude != null && place.longitude != null) {
+            Uri.parse("geo:${place.latitude},${place.longitude}?q=${place.latitude},${place.longitude}(${Uri.encode(place.name)})")
+        } else {
+            Uri.parse("geo:0,0?q=${Uri.encode(getMapSearchQuery(place))}")
+        }
         val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri)
         mapIntent.setPackage("com.google.android.apps.maps")
         if (mapIntent.resolveActivity(packageManager) != null) {
@@ -259,19 +307,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun checkPermissions() {
-        val fineLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-        val coarseLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
-        
-        if (fineLocation != PackageManager.PERMISSION_GRANTED || coarseLocation != PackageManager.PERMISSION_GRANTED) {
-            requestPermissionLauncher.launch(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-            )
+    private fun getMapSearchQuery(place: Place): String {
+        val address = place.address.trim()
+        val locality = place.locality.trim()
+
+        return when {
+            address.isNotEmpty() && locality.isNotEmpty() -> "$address, $locality"
+            address.isNotEmpty() -> address
+            locality.isNotEmpty() -> "${place.name}, $locality"
+            else -> place.name
         }
     }
 
+    private fun hasLocationPermission(): Boolean {
+        val fineLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        val coarseLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+
+        return fineLocation == PackageManager.PERMISSION_GRANTED ||
+            coarseLocation == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestLocationPermissions() {
+        requestPermissionLauncher.launch(
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        )
+    }
+
     private fun getCurrentLocation(onLocationReceived: (Location?) -> Unit) {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+        if (hasLocationPermission()) {
             fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
                 onLocationReceived(location)
             }.addOnFailureListener {
